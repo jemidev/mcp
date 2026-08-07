@@ -32,7 +32,7 @@ function createMcpServer(): McpServer {
 		{ name: 'jemi', version: VERSION },
 		{
 			instructions:
-				"Jemi project management. Every call is executed inside the user's browser tab, so encrypted content is readable only while that tab is open. Always resolve ids via jemi_list_projects → jemi_list_channels before acting."
+				"Jemi project management. Every call is executed inside the user's browser tab, so encrypted content is readable only while that tab is open. Results are JSON. Always resolve ids via jemi_list_projects → jemi_list_channels before acting, except when the user names a task by its number (ALP-0254) — then use jemi_find_task_by_key directly. Prefer the filters on jemi_list_tasks and the bulk tools over repeating a single-item call."
 		}
 	)
 	registerTools(server, hub)

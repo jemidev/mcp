@@ -2,6 +2,8 @@ import type { TMcpOperationName, TMcpParams } from '../protocol'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
+import { documentFormatGuide } from '../protocol'
+
 import { McpBridgeError, type BridgeHub } from './bridge'
 
 type ToolResult = {
@@ -23,21 +25,16 @@ const confirmation = z
 	)
 
 const document = z
-	.discriminatedUnion('mode', [
-		z.object({
-			mode: z.literal('text'),
-			text: z.string().describe('Plain text. Newlines become paragraphs; markup is NOT parsed.')
-		}),
-		z.object({
-			mode: z.literal('tiptap'),
-			json: z
-				.record(z.string(), z.unknown())
-				.describe('A ProseMirror/TipTap document: { "type": "doc", "content": [...] }')
-		})
-	])
+	.string()
 	.describe(
-		'Task body. Use "text" for prose. Use "tiptap" whenever you need headings, lists, bold or links — writing markdown into "text" shows up as literal asterisks.'
+		'Markdown. CommonMark + GFM, plus Jemi syntax for what markdown lacks: ++underline++, @memberId mentions, <red>coloured</red> or <#b53636>coloured</#b53636>. Emoji are written as the character itself (🚀), never as a :shortcode:. Call jemi_document_format once for the full list.'
 	)
+
+const messageBody = {
+	content: document.describe(
+		'The message, as markdown — **bold**, lists, quotes, @memberId mentions and emoji written as the character itself (🚀, never a :shortcode:) all work. Comments and chat take a narrower set than task bodies: no horizontal rules, no colour.'
+	)
+}
 
 /** Fields shared by task create and update. */
 const taskFields = {
@@ -205,10 +202,30 @@ export function registerTools(server: McpServer, hub: BridgeHub): void {
 		'jemi_list_tasks',
 		{
 			title: 'List tasks',
-			description: 'List tasks in a channel, optionally narrowed to one board.',
-			inputSchema: { channelId, boardId: z.string().optional() }
+			description:
+				'List or search tasks. Give channelId for one channel, or projectId to search every board channel of a project. Filter instead of reading everything: a busy channel holds hundreds of tasks. Returns { total, tasks } — if total exceeds the number returned, narrow the filter or page with offset.',
+			inputSchema: {
+				channelId: channelId.optional(),
+				projectId: z.string().optional().describe('Search across the whole project instead'),
+				boardId: z.string().optional(),
+				search: z.string().optional().describe('Case-insensitive substring of the title'),
+				tagIds: z.array(z.string()).optional().describe('Keep tasks carrying any of these tags'),
+				priorityIds: z.array(z.string()).optional(),
+				difficultyIds: z.array(z.string()).optional(),
+				memberIds: z.array(z.string()).optional().describe('Keep tasks assigned to any of these'),
+				missing: z
+					.array(z.enum(['priority', 'difficulty', 'dueDate', 'tags', 'members']))
+					.optional()
+					.describe('Keep only tasks where these are unset, e.g. ["priority"]'),
+				detail: z
+					.enum(['brief', 'full'])
+					.optional()
+					.describe('brief (default) omits tags, assignees, priority and difficulty'),
+				limit: z.number().int().min(1).max(500).optional(),
+				offset: z.number().int().min(0).optional()
+			}
 		},
-		({ channelId, boardId }) => run('task.list', { channelId, boardId })
+		(params) => run('task.list', params)
 	)
 
 	server.registerTool(
@@ -216,10 +233,24 @@ export function registerTools(server: McpServer, hub: BridgeHub): void {
 		{
 			title: 'Get task',
 			description:
-				'Full task including its body. Request documentMode "tiptap" if you intend to edit the body while preserving formatting.',
-			inputSchema: { taskId: z.string(), documentMode: z.enum(['text', 'tiptap']).optional() }
+				'Full task including its body. The body comes back as markdown by default.',
+			inputSchema: { taskId: z.string() }
 		},
-		({ taskId, documentMode }) => run('task.get', { taskId, documentMode })
+		({ taskId }) => run('task.get', { taskId })
+	)
+
+	server.registerTool(
+		'jemi_find_task_by_key',
+		{
+			title: 'Find task by its number',
+			description:
+				'Look a task up by the number the user sees in the UI, like "ALP-0254". Use this whenever they name a task that way — do not list a whole channel to search for it.',
+			inputSchema: {
+				key: z.string().describe('Task number as shown in Jemi, e.g. ALP-0254'),
+				projectId: z.string().optional().describe('Narrows the search; otherwise every project is checked')
+			}
+		},
+		(params) => run('task.by_key', params)
 	)
 
 	server.registerTool(
@@ -256,6 +287,21 @@ export function registerTools(server: McpServer, hub: BridgeHub): void {
 			inputSchema: { taskId: z.string(), title: z.string().min(1).optional(), ...taskFields }
 		},
 		(params) => run('task.update', params)
+	)
+
+	server.registerTool(
+		'jemi_update_tasks',
+		{
+			title: 'Update several tasks',
+			description:
+				'Update many tasks in one call, each with its own fields. Use this instead of a run of jemi_update_task — setting a priority on twenty tasks is one call, not twenty.',
+			inputSchema: {
+				updates: z
+					.array(z.object({ taskId: z.string(), title: z.string().min(1).optional(), ...taskFields }))
+					.min(1)
+			}
+		},
+		({ updates }) => run('task.update_many', { updates })
 	)
 
 	server.registerTool(
@@ -337,8 +383,8 @@ export function registerTools(server: McpServer, hub: BridgeHub): void {
 		{
 			title: 'Comment on a task',
 			description:
-				'Post a comment on a task as the connected user. Use this to say something about a task — editing the task body would overwrite its description.',
-			inputSchema: { taskId: z.string(), content: z.string().min(1) }
+				'Post a comment on a task as the connected user. Use this to say something about a task — editing the task body would overwrite its description. Pass "content" for plain text or "document" for formatting.',
+			inputSchema: { taskId: z.string(), ...messageBody }
 		},
 		({ taskId, content }) => run('comment.add', { taskId, content })
 	)
@@ -359,10 +405,27 @@ export function registerTools(server: McpServer, hub: BridgeHub): void {
 		'jemi_send_message',
 		{
 			title: 'Send message',
-			description: 'Post a message to a channel as the connected user.',
-			inputSchema: { channelId, content: z.string().min(1) }
+			description:
+				'Post a message to a channel as the connected user. Pass "content" for plain text or "document" for formatting.',
+			inputSchema: { channelId, ...messageBody }
 		},
 		({ channelId, content }) => run('chat.send', { channelId, content })
+	)
+
+	server.registerTool(
+		'jemi_document_format',
+		{
+			title: 'Rich text format reference',
+			description:
+				'The node and mark names accepted in a "tiptap" document. Read this once before writing formatted text — writing markdown into a plain-text field produces literal asterisks.',
+			inputSchema: {
+				surface: z
+					.enum(['task', 'comment', 'message'])
+					.optional()
+					.describe('Which surface the document is for. Task bodies accept a few extra nodes.')
+			}
+		},
+		({ surface }) => ({ content: [{ type: 'text' as const, text: documentFormatGuide(surface) }] })
 	)
 
 	// ------------------------------------------------------------ dictionaries
@@ -406,6 +469,29 @@ export function registerTools(server: McpServer, hub: BridgeHub): void {
 			}
 		},
 		(params) => run('dictionary.update', params)
+	)
+
+	server.registerTool(
+		'jemi_update_dictionary_items',
+		{
+			title: 'Update several tags / priorities / difficulties',
+			description: 'Rewrite many dictionary entries of one channel in a single call.',
+			inputSchema: {
+				kind: dictionaryKind,
+				channelId,
+				items: z
+					.array(
+						z.object({
+							id: z.string(),
+							title: z.string().min(1),
+							hex: z.string().describe('Colour as #rrggbb'),
+							description: z.string().optional()
+						})
+					)
+					.min(1)
+			}
+		},
+		(params) => run('dictionary.update_many', params)
 	)
 
 	server.registerTool(

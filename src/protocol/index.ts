@@ -1,4 +1,5 @@
 export * from './constants'
+export * from './document'
 export * from './entities'
 export * from './envelope'
 export * from './operations'

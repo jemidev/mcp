@@ -39,9 +39,19 @@ could lie.
 
 ## Tools
 
-30 tools covering projects, channels, tasks, documents, comments, chat, dictionaries (tags,
+34 tools covering projects, channels, tasks, documents, comments, chat, dictionaries (tags,
 priorities, difficulties) and members. Ids are opaque, so resolve them first —
-`jemi_list_projects` → `jemi_list_channels` — before acting.
+`jemi_list_projects` → `jemi_list_channels` — before acting. The exception is a task number
+like `ALP-0254`: `jemi_find_task_by_key` resolves it in one call.
+
+`jemi_list_tasks` filters by board, title, tag, priority, difficulty, assignee and by what a
+task is *missing*, and returns a brief shape by default — listing a busy channel in full does
+not fit in an assistant's context. Bulk tools (`jemi_update_tasks`,
+`jemi_update_dictionary_items`, `jemi_create_tasks`, `jemi_delete_tasks`) exist so twenty edits
+are one call.
+
+Task bodies, comments and chat messages are TipTap documents. `jemi_document_format` returns
+the accepted nodes and marks for each surface.
 
 Destructive tools (deleting a task, a channel, a dictionary entry) require a `confirmation`
 argument that the assistant must get from you in words. That is a guardrail against an

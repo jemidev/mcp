@@ -1,6 +1,6 @@
 {
 	"name": "@jemidev/mcp",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "MCP server for Jemi — lets an AI assistant read and edit your projects through your own browser tab.",
 	"license": "MIT",
 	"author": "Jemi",

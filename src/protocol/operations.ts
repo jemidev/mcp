@@ -4,12 +4,12 @@ import type {
 	TMcpDictionaryItem,
 	TMcpDictionaryKind,
 	TMcpDocument,
-	TMcpDocumentMode,
 	TMcpMember,
 	TMcpMessage,
 	TMcpProject,
 	TMcpProjectDetail,
 	TMcpTask,
+	TMcpTaskBrief,
 	TMcpTaskSummary
 } from './entities'
 
@@ -42,6 +42,39 @@ type TaskFields = SetEdit & {
 	difficultyId?: string | null
 }
 
+/**
+ * Listing a channel means listing every task in it, which is far too much to read through. The
+ * filters are applied in the browser, so narrowing here costs nothing and is the difference
+ * between a usable answer and a truncated dump.
+ */
+export type TMcpTaskFilter = {
+	/** One channel, or every BOARDS channel of `projectId` when omitted. */
+	channelId?: string
+	projectId?: string
+	boardId?: string
+	/** Case-insensitive substring of the title. */
+	search?: string
+	tagIds?: string[]
+	priorityIds?: string[]
+	difficultyIds?: string[]
+	memberIds?: string[]
+	/** Keep only tasks where these fields are unset — "everything without a priority". */
+	missing?: Array<'priority' | 'difficulty' | 'dueDate' | 'tags' | 'members'>
+	/** `brief` (default) omits tags, assignees, priority and difficulty. */
+	detail?: 'brief' | 'full'
+	limit?: number
+	offset?: number
+}
+
+export type TMcpTaskPage = {
+	/** How many tasks matched, before limit/offset — so a truncated page is visible as one. */
+	total: number
+	tasks: TMcpTaskBrief[]
+}
+
+/** Comments and chat messages are markdown too. */
+type MessageBody = { content: TMcpDocument }
+
 export type TMcpOperations = {
 	'context.projects': { params: Record<string, never>; result: TMcpProject[] }
 	'context.project': { params: { projectId: string }; result: TMcpProjectDetail }
@@ -66,11 +99,9 @@ export type TMcpOperations = {
 	'channel.rename': { params: { channelId: string; title: string }; result: TMcpChannel }
 	'channel.delete': { params: Confirmed<{ channelId: string }>; result: { id: string } }
 
-	'task.list': { params: { channelId: string; boardId?: string }; result: TMcpTaskSummary[] }
-	'task.get': {
-		params: { taskId: string; documentMode?: TMcpDocumentMode }
-		result: TMcpTask
-	}
+	'task.list': { params: TMcpTaskFilter; result: TMcpTaskPage }
+	'task.get': { params: { taskId: string }; result: TMcpTask }
+	'task.by_key': { params: { key: string; projectId?: string }; result: TMcpTask }
 	'task.create': {
 		params: { channelId: string; boardId: string } & TaskFields & { title: string }
 		result: TMcpTask
@@ -84,6 +115,10 @@ export type TMcpOperations = {
 		result: TMcpTaskSummary[]
 	}
 	'task.update': { params: { taskId: string } & TaskFields; result: TMcpTask }
+	'task.update_many': {
+		params: { updates: Array<{ taskId: string } & TaskFields> }
+		result: TMcpTaskBrief[]
+	}
 	'task.move': { params: { taskId: string; boardId: string }; result: TMcpTask }
 	'task.reorder': { params: { boardId: string; taskIds: string[] }; result: TMcpTaskSummary[] }
 	'task.move_channel': {
@@ -101,10 +136,10 @@ export type TMcpOperations = {
 	'task.delete_many': { params: Confirmed<{ taskIds: string[] }>; result: { ids: string[] } }
 
 	'comment.list': { params: { taskId: string; limit?: number }; result: TMcpMessage[] }
-	'comment.add': { params: { taskId: string; content: string }; result: TMcpMessage }
+	'comment.add': { params: { taskId: string } & MessageBody; result: TMcpMessage }
 
 	'chat.messages': { params: { channelId: string; limit?: number }; result: TMcpMessage[] }
-	'chat.send': { params: { channelId: string; content: string }; result: TMcpMessage }
+	'chat.send': { params: { channelId: string } & MessageBody; result: TMcpMessage }
 
 	'dictionary.list': {
 		params: { kind: TMcpDictionaryKind; channelId: string }
@@ -130,6 +165,14 @@ export type TMcpOperations = {
 			description?: string
 		}
 		result: TMcpDictionaryItem
+	}
+	'dictionary.update_many': {
+		params: {
+			kind: TMcpDictionaryKind
+			channelId: string
+			items: Array<{ id: string; title: string; hex: string; description?: string }>
+		}
+		result: TMcpDictionaryItem[]
 	}
 	'dictionary.delete': {
 		params: Confirmed<{ kind: TMcpDictionaryKind; channelId: string; id: string }>
