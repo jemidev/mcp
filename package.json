@@ -1,0 +1,66 @@
+{
+	"name": "@jemidev/mcp",
+	"version": "0.1.0",
+	"description": "MCP server for Jemi — lets an AI assistant read and edit your projects through your own browser tab.",
+	"license": "MIT",
+	"author": "Jemi",
+	"homepage": "https://github.com/jemidev/mcp#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jemidev/mcp.git"
+	},
+	"bugs": {
+		"url": "https://github.com/jemidev/mcp/issues"
+	},
+	"keywords": [
+		"mcp",
+		"model-context-protocol",
+		"jemi",
+		"ai",
+		"claude",
+		"project-management"
+	],
+	"type": "module",
+	"bin": {
+		"jemi-mcp": "./dist/cli.js"
+	},
+	"main": "./dist/protocol.js",
+	"types": "./dist/types/protocol/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/types/protocol/index.d.ts",
+			"default": "./dist/protocol.js"
+		},
+		"./protocol": {
+			"types": "./dist/types/protocol/index.d.ts",
+			"default": "./dist/protocol.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"engines": {
+		"node": ">=20"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"dev": "bun --watch ./src/server/cli.ts",
+		"start": "node ./dist/cli.js",
+		"build": "bun run ./scripts/build.ts",
+		"check-types": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.30.0",
+		"ws": "^8.18.0",
+		"zod": "^4.1.13"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"@types/ws": "^8.5.13",
+		"typescript": "^5.7.0"
+	}
+}
