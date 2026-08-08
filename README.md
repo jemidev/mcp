@@ -1,3 +1,5 @@
+[![npm](https://img.shields.io/npm/v/@jemidev/mcp?color=cb3837&logo=npm)](https://www.npmjs.com/package/@jemidev/mcp)
+
 # @jemidev/mcp
 
 MCP server for Jemi. It lets an AI assistant - Claude Code, Codex, Cursor, and anything else that speaks the Model Context Protocol - read and edit your Jemi projects.
