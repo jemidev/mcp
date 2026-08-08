@@ -31,13 +31,24 @@ type PendingCall = {
 export type BridgeIdentity = { id: string; displayName: string }
 
 /**
+ * What the tools need in order to reach the browser: a way to run an operation, and a way to
+ * say who is on the other end. Either the process owns the bridge itself, or it forwards to
+ * the process that does.
+ */
+export type McpHub = {
+	readonly connected: boolean
+	readonly user: BridgeIdentity | null
+	call<K extends TMcpOperationName>(op: K, params: TMcpParams<K>): Promise<TMcpResult<K>>
+}
+
+/**
  * Owns the single browser bridge connection and correlates requests with responses.
  *
  * Only one bridge may be attached at a time: every operation targets "the tab the user is
  * looking at", and with two tabs connected there would be no way to say which one that is.
  * Later connections are rejected rather than silently queued.
  */
-export class BridgeHub {
+export class BridgeHub implements McpHub {
 	private socket: BridgeSocket | null = null
 	private identity: BridgeIdentity | null = null
 	private readonly pending = new Map<string, PendingCall>()
@@ -130,5 +141,62 @@ export class BridgeHub {
 			call.reject(new McpBridgeError(error))
 		}
 		this.pending.clear()
+	}
+}
+
+/** What `/relay` answers with: the operation's outcome plus who the bridge belongs to. */
+export type TMcpRelayResponse =
+	| { ok: true; result: unknown; user: BridgeIdentity | null }
+	| { ok: false; error: TMcpError; user: BridgeIdentity | null }
+
+/**
+ * Runs operations on another @jemidev/mcp process — the one that got to the port first.
+ *
+ * Only one process can hold the bridge port, but every MCP client that spawns us over stdio
+ * gets its own process. Rather than fight over the port, the later ones forward their calls to
+ * the holder, so a single browser tab serves all of them.
+ */
+export class RemoteHub implements McpHub {
+	private identity: BridgeIdentity | null = null
+	private online = true
+
+	constructor(private readonly origin: string) {}
+
+	get connected(): boolean {
+		return this.online && this.identity !== null
+	}
+
+	get user(): BridgeIdentity | null {
+		return this.identity
+	}
+
+	async call<K extends TMcpOperationName>(op: K, params: TMcpParams<K>): Promise<TMcpResult<K>> {
+		let response: Response
+		try {
+			response = await fetch(`${this.origin}/relay`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ op, params })
+			})
+		} catch {
+			this.online = false
+			throw new McpBridgeError({
+				code: 'BRIDGE_UNAVAILABLE',
+				message: `The @jemidev/mcp process at ${this.origin} is gone. Restart this MCP client to take over its port.`
+			})
+		}
+
+		if (!response.ok) {
+			throw new McpBridgeError({
+				code: 'BRIDGE_UNAVAILABLE',
+				message: `Relay to ${this.origin} failed with HTTP ${response.status}`
+			})
+		}
+
+		this.online = true
+		const body = (await response.json()) as TMcpRelayResponse
+		this.identity = body.user
+		if (!body.ok) throw new McpBridgeError(body.error)
+		return body.result as TMcpResult<K>
 	}
 }

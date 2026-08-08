@@ -2,35 +2,49 @@
 
 MCP server for Jemi. It lets an AI assistant - Claude Code, Codex, Cursor, and anything else that speaks the Model Context Protocol - read and edit your Jemi projects.
 
-It listens on `127.0.0.1:4401`, and forwards every request to a Jemi tab over a local WebSocket bridge.
+It forwards every request to a Jemi tab over a local WebSocket bridge on `127.0.0.1:4401`.
 
 ```
-assistant  ──HTTP──▶  jemi-mcp (127.0.0.1:4401)  ──WebSocket──▶  your Jemi tab  ──▶  Jemi API
-                       no keys, no storage                        holds the keys
+assistant  ──stdio──▶  @jemidev/mcp  ──WebSocket──▶  your Jemi tab  ──▶  Jemi API
+                    no keys, no storage               holds the keys
 ```
 
 ## Usage
 
-Start the server and leave it running:
+Register it with your assistant and let the assistant start it:
 
 ```sh
-bunx @jemidev/mcp    # or: npx -y @jemidev/mcp
+claude mcp add jemi -- bunx @jemidev/mcp    # or: npx -y @jemidev/mcp
 ```
 
-Register it with your assistant:
+Then open Jemi, go to **Settings → MCP** and press **Connect**. That page has ready-made
+snippets for Claude Code, Claude Desktop, Codex, OpenCode, Cursor, Gemini CLI, VS Code and
+Windsurf.
+
+Several assistants can be registered at once. The browser can only reach one port, so the first
+process to start holds the bridge and the rest forward their calls to it — one tab serves all
+of them.
+
+### HTTP instead
+
+The server also speaks Streamable HTTP on `http://127.0.0.1:4401/mcp`, for clients that cannot
+spawn a process. Then you start it yourself and leave it running:
 
 ```sh
+bunx @jemidev/mcp
 claude mcp add --transport http jemi http://127.0.0.1:4401/mcp
 ```
 
-Then open Jemi, go to **Settings → MCP** and press **Connect**. That page also has ready-made
-snippets for Claude Desktop, Codex, OpenCode, Cursor, Gemini CLI, VS Code and Windsurf.
+Which transport you get depends on whether stdin is a TTY: an MCP client spawns the process with
+a pipe and gets stdio, a human typing the command in a terminal gets the HTTP server. Pass
+`--stdio` or `--http` to say so explicitly.
 
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `JEMI_MCP_PORT` | `4401` | Port to listen on. Change it in your client config too. |
+| `JEMI_MCP_PORT` | `4401` | Port the browser bridge lives on. Change it in your client config too. |
+| `JEMI_MCP_TRANSPORT` | — | `stdio` or `http`, overriding the TTY check. Same as the flags. |
 | `JEMI_MCP_ALLOWED_ORIGINS` | `https://app.jemi.dev` | Comma-separated origins allowed to attach a bridge. |
 
 The origin allowlist matters: without it any page you visit could connect to the local port and
@@ -50,8 +64,9 @@ not fit in an assistant's context. Bulk tools (`jemi_update_tasks`,
 `jemi_update_dictionary_items`, `jemi_create_tasks`, `jemi_delete_tasks`) exist so twenty edits
 are one call.
 
-Task bodies, comments and chat messages are TipTap documents. `jemi_document_format` returns
-the accepted nodes and marks for each surface.
+Task bodies, comments and chat messages are markdown — CommonMark and GFM, plus a Jemi spelling
+for what markdown lacks (underline, colour, mentions, attachments). `jemi_document_format`
+returns the syntax each surface accepts.
 
 Destructive tools (deleting a task, a channel, a dictionary entry) require a `confirmation`
 argument that the assistant must get from you in words. That is a guardrail against an

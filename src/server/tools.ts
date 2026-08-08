@@ -4,7 +4,7 @@ import { z } from 'zod'
 
 import { documentFormatGuide } from '../protocol'
 
-import { McpBridgeError, type BridgeHub } from './bridge'
+import { McpBridgeError, type McpHub } from './bridge'
 
 type ToolResult = {
 	content: { type: 'text'; text: string }[]
@@ -64,7 +64,7 @@ function fail(error: unknown): ToolResult {
 	return { content: [{ type: 'text', text: detail }], isError: true }
 }
 
-export function registerTools(server: McpServer, hub: BridgeHub): void {
+export function registerTools(server: McpServer, hub: McpHub): void {
 	const run = async <K extends TMcpOperationName>(
 		op: K,
 		params: TMcpParams<K>
